@@ -1,5 +1,5 @@
 run:
-	python3.13 main.py -t default
+	python3.10 main.py -t default
 
 install:
-	python3.13 -m pip install -r requirements.txt
+	python3.10 -m pip install -r requirements.txt
