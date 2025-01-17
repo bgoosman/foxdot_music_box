@@ -3,7 +3,7 @@ import os
 import json
 import argparse
 from pathlib import Path
-from FoxDot import *
+from FoxDot import Clock
 from dotenv import load_dotenv
 from litellm import completion
 import sys
@@ -74,7 +74,8 @@ def chat(thread_name=None):
 
         if user_input.lower() == 'stop':
             Clock.stop()
-            break
+            print("Clock stopped")
+            continue
         
         # Check for exit command
         if user_input.lower() == 'quit':
@@ -85,6 +86,7 @@ def chat(thread_name=None):
             if last_code_blocks:
                 print("\nExecuting last code block:")
                 for code in last_code_blocks:
+                    print(code)
                     print("\n--- Code output ---")
                     output = execute_code_safely(code)
                     print(output.strip())
@@ -100,7 +102,7 @@ def chat(thread_name=None):
         try:
             # Get AI response with streaming
             response = completion(
-                model="gpt-4o-mini",
+                model="gpt-4o",
                 messages=messages,
                 api_base=os.getenv("OPENAPI_BASE_URL"),
                 api_key=os.getenv("OPENAI_API_KEY"),
