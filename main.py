@@ -3,11 +3,11 @@ import os
 import json
 import argparse
 from pathlib import Path
-from FoxDot import Clock
 from dotenv import load_dotenv
 from litellm import completion
-import sys
 import re
+import multiprocessing
+from foxdot_runner import run_foxdot_code
 
 # Disable Pydantic warning messages
 warnings.filterwarnings("ignore", message="Valid config keys have changed in V2:*")
@@ -24,24 +24,14 @@ def extract_code_blocks(text):
     pattern = r"```(?:python)?\n(.*?)\n```"
     return re.findall(pattern, text, re.DOTALL)
 
-def execute_code_safely(code):
+def execute_code_safely(code, code_queue):
     """Execute Python code in a safe manner and capture its output."""
     try:
-        # Create a string buffer to capture output
-        from io import StringIO
-        import sys
-        old_stdout = sys.stdout
-        redirected_output = StringIO()
-        sys.stdout = redirected_output
-
-        # Execute the code
-        exec(code, {}, {})
-
-        # Restore stdout and get output
-        sys.stdout = old_stdout
-        return redirected_output.getvalue()
+        # Send code to FoxDot process
+        code_queue.put(code)
+        return "Code sent to FoxDot process"
     except Exception as e:
-        return f"Error executing code: {str(e)}"
+        return f"Error sending code to FoxDot process: {str(e)}"
 
 def load_chat_thread(thread_name):
     """Load a chat thread from a JSON file."""
@@ -57,14 +47,32 @@ def save_chat_thread(thread_name, messages):
     with open(file_path, 'w') as f:
         json.dump(messages, f, indent=2)
 
+def create_system_prompt():
+    return {
+        "role": "system",
+        "content": """
+        You are a helpful assistant that can execute Python code and play music with FoxDot.
+        All instrument names must be two letters long, like 'bd' or 'sd'.
+        """
+    }
+
 def chat(thread_name=None):
     # Initialize or load conversation history
     messages = load_chat_thread(thread_name) if thread_name else []
+    if not messages:
+        messages.append(create_system_prompt())
+    print(messages)
+    
+    # Set up multiprocessing queue and start FoxDot process
+    code_queue = multiprocessing.Queue()
+    foxdot_process = multiprocessing.Process(target=run_foxdot_code, args=(code_queue,))
+    foxdot_process.start()
     
     print(f"Chat started{f' (Thread: {thread_name})' if thread_name else ''}. Type 'quit' to exit.")
     print("Special commands:")
     print("  'quit' - Exit the chat")
     print("  'run' - Execute the last detected Python code block")
+    print("  'stop' - Stop all FoxDot sounds")
     
     last_code_blocks = []
     
@@ -73,12 +81,15 @@ def chat(thread_name=None):
         user_input = input("\nYou: ").strip()
 
         if user_input.lower() == 'stop':
-            Clock.stop()
+            code_queue.put("Clock.stop()")
             print("Clock stopped")
             continue
         
         # Check for exit command
         if user_input.lower() == 'quit':
+            # Send exit command to FoxDot process
+            code_queue.put("EXIT")
+            foxdot_process.join(timeout=5)
             break
             
         # Check for code execution command
@@ -88,7 +99,7 @@ def chat(thread_name=None):
                 for code in last_code_blocks:
                     print(code)
                     print("\n--- Code output ---")
-                    output = execute_code_safely(code)
+                    output = execute_code_safely(code, code_queue)
                     print(output.strip())
                     print("--- End output ---")
                 continue
